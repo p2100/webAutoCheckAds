@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  webautocheckads:
+    build: .
+    container_name: webautocheckads
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+    volumes:
+      # 如果需要持久化日志或数据，可以挂载卷
+      - ./logs:/app/logs
+    # 如果你的应用需要暴露端口，取消注释下面的行
+    # ports:
+    #   - "3000:3000"
+    # 限制资源使用
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25' 
