@@ -7,6 +7,7 @@
 // };
 
 export default {
+  site: "MZ",
   check: {
     // "http://192.168.12.9:8080/googleAdSense/afg(reward)/": {as:"3,1",gam:"1"},
     // "http://192.168.12.9:8080/googleAdSense/vig/": {},
@@ -16,7 +17,7 @@ export default {
     // "http://192.168.12.9:8080/googleAdManager/display/": {},
     // "http://192.168.12.9:8080/googleAdManager/reward/": {},
     // "http://192.168.12.9:8080/video/": {},
-    "https://mzgen.com/": { as: 1, gam: 1 },
+    "https://appinso.com/11111": { as: 1, gam: 1 },
     "https://mzgen.com/detail/com-roblox-client.html": {
       as: 1,
       gam: 1,
@@ -24,7 +25,7 @@ export default {
         {
           selector: ".down-link-item,.t-play",
           action: "click",
-          delay: 3000,
+          delay: 0,
         },
       ],
     },

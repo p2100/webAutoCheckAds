@@ -3,6 +3,13 @@ import config from "./config.js";
 // 可选：使用 @puppeteer/browsers 进行浏览器管理
 // import { install, launch, getInstalledBrowsers, Browser } from "@puppeteer/browsers";
 
+// 检查Node.js版本是否支持fetch
+const nodeVersion = process.version;
+const majorVersion = parseInt(nodeVersion.slice(1).split('.')[0]);
+if (majorVersion < 18) {
+  console.warn(`警告: 当前Node.js版本 ${nodeVersion} 可能不支持fetch API，建议升级到18+或安装node-fetch`);
+}
+
 class WebsiteChecker {
   constructor() {
     this.browser = null;
@@ -850,6 +857,28 @@ async function main() {
 
     console.log("\n=== 对比结果 ===");
     console.log(JSON.stringify(simpleComparisonReport, null, 2));
+    
+    // 发送结果到服务器
+    try {
+      const response = await fetch("http://n.sp.com/open_api/get_test_results", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          site: config.site,
+          data: simpleComparisonReport
+        }),
+      });
+      
+      if (response.ok) {
+        console.log("结果已成功发送到服务器");
+      } else {
+        console.error(`发送结果失败: HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error("发送结果到服务器时出错:", error.message);
+    }
   } catch (error) {
     console.error("检测过程中发生错误:", error);
   } finally {
