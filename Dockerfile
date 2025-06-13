@@ -1,4 +1,4 @@
-# 使用官方Node.js镜像作为基础镜像
+# 使用包含Python 3.8的Node.js镜像作为基础镜像
 FROM node:18-slim
 
 # 设置工作目录
@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     ca-certificates \
     apt-transport-https \
+    python3.8 \
+    python3.8-dev \
+    python3-pip \
+    cron \
     && rm -rf /var/lib/apt/lists/*
 
 # 添加Google Chrome的官方APT仓库
@@ -87,9 +91,15 @@ USER pptruser
 ENV NODE_ENV=production
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+ENV PYTHON=/usr/bin/python3.8
+ENV PATH="/usr/local/bin:${PATH}"
+
+# 创建启动脚本
+RUN echo '#!/bin/bash\nservice cron start\ntail -f /dev/null' > /app/start.sh && \
+    chmod +x /app/start.sh
 
 # 暴露端口（如果你的应用需要）
 # EXPOSE 3000
 
 # 启动命令
-CMD ["npm", "start"] 
+CMD ["/app/start.sh"]

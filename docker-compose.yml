@@ -12,6 +12,8 @@ services:
     volumes:
       # 如果需要持久化日志或数据，可以挂载卷
       - ./logs:/app/logs
+      - /var/www/html:/var/www/html
+      - /apps/airflow_sp/project:/server
     # 如果你的应用需要暴露端口，取消注释下面的行
     # ports:
     #   - "3000:3000"
