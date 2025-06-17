@@ -1,5 +1,4 @@
 import puppeteer from "puppeteer";
-import config from "./config.js";
 // 可选：使用 @puppeteer/browsers 进行浏览器管理
 // import { install, launch, getInstalledBrowsers, Browser } from "@puppeteer/browsers";
 
@@ -8,6 +7,58 @@ const nodeVersion = process.version;
 const majorVersion = parseInt(nodeVersion.slice(1).split('.')[0]);
 if (majorVersion < 18) {
   console.warn(`警告: 当前Node.js版本 ${nodeVersion} 可能不支持fetch API，建议升级到18+或安装node-fetch`);
+}
+
+/**
+ * 解析命令行参数
+ */
+function parseCommandLineArgs() {
+  const args = process.argv.slice(2);
+  const params = {};
+  
+  args.forEach(arg => {
+    if (arg.includes('=')) {
+      const [key, value] = arg.split('=');
+      params[key] = value;
+    }
+  });
+  
+  return params;
+}
+
+/**
+ * 动态加载配置文件
+ */
+async function loadConfig(siteName) {
+  if (!siteName) {
+    throw new Error('请提供site参数，例如: node index.js site=MZ');
+  }
+  
+  try {
+    console.log(`正在加载配置文件: configs/${siteName}.js`);
+    
+    // 直接使用相对路径动态导入
+    const configModule = await import(`./configs/${siteName}.js`);
+    return configModule.default;
+  } catch (error) {
+    console.error(`加载配置文件失败: configs/${siteName}.js`);
+    console.error(`错误信息: ${error.message}`);
+    
+    // 列出可用的配置文件
+    try {
+      const fs = await import('fs');
+      const files = fs.readdirSync('./configs').filter(file => file.endsWith('.js'));
+      console.log('可用的配置文件:');
+      files.forEach(file => {
+        const siteName = file.replace('.js', '');
+        console.log(`  - ${siteName} (使用: node index.js site=${siteName})`);
+      });
+    } catch (listError) {
+      console.error('无法列出配置文件:', listError.message);
+    }
+    
+    throw error;
+  }
 }
 
 class WebsiteChecker {
@@ -109,8 +160,6 @@ class WebsiteChecker {
     }
   }
 
-
-
   /**
    * 设置网络请求拦截
    */
@@ -126,12 +175,12 @@ class WebsiteChecker {
 
         if (adTypeInfo) {
           const adRecord = {
-            url: url,
-            pageUrl: pageUrl, // 添加被检测的页面URL
-            status: status,
+            url,
+            pageUrl, // 添加被检测的页面URL
+            status,
             timestamp: this.formatTimestamp(new Date()),
             isSuccess: status >= 200 && status < 400,
-            device: device,
+            device,
             platform: adTypeInfo.platform,
             platformName: adTypeInfo.platformName
           };
@@ -512,37 +561,36 @@ class WebsiteChecker {
 
   /**
    * 统一检测配置函数
-   * @param {Object} config - 配置对象
-   * @param {string} configName - 配置名称（用于日志显示）
    */
-  async checkConfig(config, configName = "未知配置") {
-    const configType = this.detectConfigType(config);
-    console.log(
-      `\n=== 开始检测(${configName}类型: ${
-        configType === "unified" ? "三端配置相同" : "三端分别配置"
-      }) ===`
-    );
-
+  async openPages(urlResultsMap) {
     const results = [];
 
-    if (configType === "unified") {
-      for (const [url, settings] of Object.entries(config.check)) {
-        // 分别用三种设备检测
+    for (const [url, urlConfig] of Object.entries(urlResultsMap)) {
+      const country = urlConfig.lang || 'us'; // 获取国家信息
+      
+      // 检查配置是否有设备特定配置
+      const hasDeviceConfig = urlConfig.pc || urlConfig.mobile || urlConfig.ipad;
+      
+      if (hasDeviceConfig) {
+        // 有设备特定配置
         for (const device of ["pc", "mobile", "ipad"]) {
-          const result = await this.checkUrl(url, device, settings);
-          result.device = device;
-          result.settings = settings;
-          result.configType = configType;
-          results.push(result);
+          const deviceConfig = urlConfig[device];
+          if (deviceConfig) {
+            // 该设备有配置
+            const result = await this.checkUrl(url, device, deviceConfig);
+            result.device = device;
+            result.settings = deviceConfig;
+            result.configType = 'device-specific';
+            results.push(result);
+          }
         }
-      }
-    } else {
-      for (const [device, objs] of Object.entries(config)) {
-        for (const [url, settings] of Object.entries(objs.check)) {
-          const result = await this.checkUrl(url, device, settings);
+      } else {
+        // 使用通用配置，所有设备都使用相同配置
+        for (const device of ["pc", "mobile", "ipad"]) {
+          const result = await this.checkUrl(url, device, urlConfig);
           result.device = device;
-          result.settings = settings;
-          result.configType = configType;
+          result.settings = urlConfig;
+          result.configType = 'unified';
           results.push(result);
         }
       }
@@ -728,27 +776,83 @@ class WebsiteChecker {
 
   /**
    * 生成简化的配置对比结果
-   * @param {Object} config - 配置对象
+   * @param {Object} urlResultsMap - URL配置映射
    * @param {Object} hierarchyStats - 层级统计数据
    */
-  generateSimpleComparisonReport(config, hierarchyStats) {
-    const configType = this.detectConfigType(config);
+  generateSimpleComparisonReport(urlResultsMap, hierarchyStats) {
     const result = {
       pc: {},
       mobile: {},
       ipad: {}
     };
 
-    if (configType === "unified") {
-      // 统一配置模式
-      Object.entries(config.check).forEach(([url, expectedConfig]) => {
-        const urlStats = hierarchyStats[url];
-        
-        // 获取预期配置（不包含actions）
+    // 遍历所有URL配置
+    Object.entries(urlResultsMap).forEach(([url, urlConfig]) => {
+      // 获取该URL的统计数据
+      const urlStats = hierarchyStats[url];
+      
+      // 检查配置是否有设备特定配置
+      const hasDeviceConfig = urlConfig.pc || urlConfig.mobile || urlConfig.ipad;
+      
+      if (hasDeviceConfig) {
+        // 设备特定配置模式
+        ['pc', 'mobile', 'ipad'].forEach(device => {
+          const deviceConfig = urlConfig[device];
+          
+          if (deviceConfig) {
+            // 该设备有配置
+            const deviceStats = urlStats?.devices?.[device];
+            
+            // 获取预期配置
+            const cleanExpected = {};
+            Object.keys(deviceConfig).forEach(key => {
+              if (key === 'as' || key === 'gam') {
+                cleanExpected[key] = deviceConfig[key];
+              }
+            });
+
+            result[device][url] = {
+              passed: true,
+              expected: cleanExpected,
+              actual: {
+                as: deviceStats?.adTypes?.as?.success || 0,
+                gam: deviceStats?.adTypes?.gam?.success || 0
+              }
+            };
+
+            // 检查是否通过
+            let hasError = false;
+            const errors = [];
+
+            ['as', 'gam'].forEach(platform => {
+              const expected = cleanExpected[platform];
+              const actual = deviceStats?.adTypes?.[platform]?.success || 0;
+
+              if (expected !== undefined && actual !== expected) {
+                hasError = true;
+                const platformName = platform === 'as' ? 'AdSense' : 'Google Ad Manager';
+                errors.push(`${platformName}: 预期 ${expected} 个，实际 ${actual} 个`);
+              }
+            });
+
+            if (hasError) {
+              result[device][url].passed = false;
+              result[device][url].reason = errors.join('; ');
+            }
+          } else {
+            // 该设备没有配置，标记为跳过
+            result[device][url] = {
+              skipped: true,
+              reason: '该设备未配置'
+            };
+          }
+        });
+      } else {
+        // 统一配置模式，所有设备使用相同配置
         const cleanExpected = {};
-        Object.keys(expectedConfig).forEach(key => {
-          if (key !== 'actions') {
-            cleanExpected[key] = expectedConfig[key];
+        Object.keys(urlConfig).forEach(key => {
+          if (key === 'as' || key === 'gam') {
+            cleanExpected[key] = urlConfig[key];
           }
         });
 
@@ -784,53 +888,8 @@ class WebsiteChecker {
             result[device][url].reason = errors.join('; ');
           }
         });
-      });
-    } else {
-      // 设备特定配置模式
-      Object.entries(config).forEach(([device, deviceConfig]) => {
-        Object.entries(deviceConfig.check).forEach(([url, expectedConfig]) => {
-          const urlStats = hierarchyStats[url];
-          const deviceStats = urlStats?.devices?.[device];
-          
-          // 获取预期配置（不包含actions）
-          const cleanExpected = {};
-          Object.keys(expectedConfig).forEach(key => {
-            if (key !== 'actions') {
-              cleanExpected[key] = expectedConfig[key];
-            }
-          });
-
-          result[device][url] = {
-            passed: true,
-            expected: cleanExpected,
-            actual: {
-              as: deviceStats?.adTypes?.as?.success || 0,
-              gam: deviceStats?.adTypes?.gam?.success || 0
-            }
-          };
-
-          // 检查是否通过
-          let hasError = false;
-          const errors = [];
-
-          ['as', 'gam'].forEach(platform => {
-            const expected = cleanExpected[platform];
-            const actual = deviceStats?.adTypes?.[platform]?.success || 0;
-
-            if (expected !== undefined && actual !== expected) {
-              hasError = true;
-              const platformName = platform === 'as' ? 'AdSense' : 'Google Ad Manager';
-              errors.push(`${platformName}: 预期 ${expected} 个，实际 ${actual} 个`);
-            }
-          });
-
-          if (hasError) {
-            result[device][url].passed = false;
-            result[device][url].reason = errors.join('; ');
-          }
-        });
-      });
-    }
+      }
+    });
 
     return result;
   }
@@ -841,32 +900,71 @@ async function main() {
   const checker = new WebsiteChecker();
 
   try {
+    // 解析命令行参数
+    const cmdArgs = parseCommandLineArgs();
+    console.log('命令行参数:', cmdArgs);
+    
+    // 动态加载配置
+    const config = await loadConfig(cmdArgs.site);
+    console.log(`已加载配置: ${cmdArgs.site}`);
+
     await checker.init();
 
-    // 检测配置1
-    const results1 = await checker.checkConfig(config, "配置1");
+    let langUrlList;
+    const urlConfigMap = {};
+    
+    try {
+      // 尝试从服务器获取URL列表
+      langUrlList = await (await fetch(`http://new.sp.com/open-api/get_test_urls?site=${cmdArgs.site}`)).json()
+    } catch (error) {
+      console.warn('无法连接到服务器，使用测试数据:', error.message);
+      // 使用测试数据
+      langUrlList = {
+        us: ["https://www.babojoy.com/test1", "https://www.babojoy.com/test2"],
+        de: ["https://www.babojoy.com/de/test1"]
+      };
+    }
+    
+    Object.keys(langUrlList).forEach((lang) => {
+      const urlList = langUrlList[lang];
+      const siteConfig = config[lang] || config["us"];
+      
+      urlList.forEach((url) => {
+        const obj = siteConfig.find((obj) => obj.matchUrl(url));
+        if (obj) {
+          obj.lang = lang;
+          urlConfigMap[url] = obj;
+        } else {
+          console.warn(`警告: URL ${url} 语言 ${lang} 在配置中没有找到匹配项`);
+        }
+      });
+    });
+    
+    
+    // 执行检测并获取结果
+    const checkResults = await checker.openPages(urlConfigMap);
 
-    // 生成报告
-    // checker.generateReport(results1);
+    // 生成检测报告
+    // checker.generateReport(checkResults);
 
     // 生成广告统计报告
     const adReport = checker.generateAdReport();
 
     // 生成简化的配置对比结果
-    const simpleComparisonReport = checker.generateSimpleComparisonReport(config, adReport.hierarchyStats);
+    const simpleComparisonReport = checker.generateSimpleComparisonReport(urlConfigMap, adReport.hierarchyStats);
 
     console.log("\n=== 对比结果 ===");
     console.log(JSON.stringify(simpleComparisonReport, null, 2));
     
     // 发送结果到服务器
     try {
-      const response = await fetch("http://n.sp.com/open_api/get_test_results", {
+      const response = await fetch("http://new.sp.com/open-api/get_test_results", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          site: config.site,
+          site: cmdArgs.site,
           data: simpleComparisonReport
         }),
       });
@@ -877,7 +975,7 @@ async function main() {
         console.error(`发送结果失败: HTTP ${response.status}`);
       }
     } catch (error) {
-      console.error("发送结果到服务器时出错:", error.message);
+      console.warn("发送结果到服务器时出错:", error.message);
     }
   } catch (error) {
     console.error("检测过程中发生错误:", error);
