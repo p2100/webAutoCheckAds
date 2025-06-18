@@ -778,12 +778,22 @@ class WebsiteChecker {
    * 生成简化的配置对比结果
    * @param {Object} urlResultsMap - URL配置映射
    * @param {Object} hierarchyStats - 层级统计数据
+   * @param {Array} checkResults - 页面检测结果数组
    */
-  generateSimpleComparisonReport(urlResultsMap, hierarchyStats) {
+  generateSimpleComparisonReport(urlResultsMap, hierarchyStats, checkResults = []) {
     const result = {
       pc: {},
       mobile: {},
       ipad: {}
+    };
+
+    // 创建一个辅助函数来获取URL的状态信息
+    const getUrlStatus = (url, device) => {
+      const urlResult = checkResults.find(r => r.url === url && r.device === device);
+      return {
+        status: urlResult?.status || 0,
+        isSuccess: urlResult?.isSuccess || false
+      };
     };
 
     // 遍历所有URL配置
@@ -802,6 +812,7 @@ class WebsiteChecker {
           if (deviceConfig) {
             // 该设备有配置
             const deviceStats = urlStats?.devices?.[device];
+            const urlStatus = getUrlStatus(url, device);
             
             // 获取预期配置
             const cleanExpected = {};
@@ -817,23 +828,31 @@ class WebsiteChecker {
               actual: {
                 as: deviceStats?.adTypes?.as?.success || 0,
                 gam: deviceStats?.adTypes?.gam?.success || 0
-              }
+              },
+              httpStatus: urlStatus.status
             };
 
             // 检查是否通过
             let hasError = false;
             const errors = [];
 
-            ['as', 'gam'].forEach(platform => {
-              const expected = cleanExpected[platform];
-              const actual = deviceStats?.adTypes?.[platform]?.success || 0;
+            // 首先检查404错误
+            if (urlStatus.status === 404) {
+              hasError = true;
+              errors.push('页面返回404错误');
+            } else {
+              // 只有在非404的情况下才检查广告数量
+              ['as', 'gam'].forEach(platform => {
+                const expected = cleanExpected[platform];
+                const actual = deviceStats?.adTypes?.[platform]?.success || 0;
 
-              if (expected !== undefined && actual !== expected) {
-                hasError = true;
-                const platformName = platform === 'as' ? 'AdSense' : 'Google Ad Manager';
-                errors.push(`${platformName}: 预期 ${expected} 个，实际 ${actual} 个`);
-              }
-            });
+                if (expected !== undefined && actual !== expected) {
+                  hasError = true;
+                  const platformName = platform === 'as' ? 'AdSense' : 'Google Ad Manager';
+                  errors.push(`${platformName}: 预期 ${expected} 个，实际 ${actual} 个`);
+                }
+              });
+            }
 
             if (hasError) {
               result[device][url].passed = false;
@@ -841,9 +860,11 @@ class WebsiteChecker {
             }
           } else {
             // 该设备没有配置，标记为跳过
+            const urlStatus = getUrlStatus(url, device);
             result[device][url] = {
               skipped: true,
-              reason: '该设备未配置'
+              reason: '该设备未配置',
+              httpStatus: urlStatus.status
             };
           }
         });
@@ -858,6 +879,7 @@ class WebsiteChecker {
 
         ['pc', 'mobile', 'ipad'].forEach(device => {
           const deviceStats = urlStats?.devices?.[device];
+          const urlStatus = getUrlStatus(url, device);
           
           result[device][url] = {
             passed: true,
@@ -865,23 +887,31 @@ class WebsiteChecker {
             actual: {
               as: deviceStats?.adTypes?.as?.success || 0,
               gam: deviceStats?.adTypes?.gam?.success || 0
-            }
+            },
+            httpStatus: urlStatus.status
           };
 
           // 检查是否通过
           let hasError = false;
           const errors = [];
 
-          ['as', 'gam'].forEach(platform => {
-            const expected = cleanExpected[platform];
-            const actual = deviceStats?.adTypes?.[platform]?.success || 0;
+          // 首先检查404错误
+          if (urlStatus.status === 404) {
+            hasError = true;
+            errors.push('页面返回404错误');
+          } else {
+            // 只有在非404的情况下才检查广告数量
+            ['as', 'gam'].forEach(platform => {
+              const expected = cleanExpected[platform];
+              const actual = deviceStats?.adTypes?.[platform]?.success || 0;
 
-            if (expected !== undefined && actual !== expected) {
-              hasError = true;
-              const platformName = platform === 'as' ? 'AdSense' : 'Google Ad Manager';
-              errors.push(`${platformName}: 预期 ${expected} 个，实际 ${actual} 个`);
-            }
-          });
+              if (expected !== undefined && actual !== expected) {
+                hasError = true;
+                const platformName = platform === 'as' ? 'AdSense' : 'Google Ad Manager';
+                errors.push(`${platformName}: 预期 ${expected} 个，实际 ${actual} 个`);
+              }
+            });
+          }
 
           if (hasError) {
             result[device][url].passed = false;
@@ -951,7 +981,7 @@ async function main() {
     const adReport = checker.generateAdReport();
 
     // 生成简化的配置对比结果
-    const simpleComparisonReport = checker.generateSimpleComparisonReport(urlConfigMap, adReport.hierarchyStats);
+    const simpleComparisonReport = checker.generateSimpleComparisonReport(urlConfigMap, adReport.hierarchyStats, checkResults);
 
     console.log("\n=== 对比结果 ===");
     console.log(JSON.stringify(simpleComparisonReport, null, 2));
