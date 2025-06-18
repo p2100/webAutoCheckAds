@@ -2,53 +2,52 @@ export default {
   us: [
     {
       matchUrl: (url) => {
-        return url.includes("mzgen.com");
+        return url.pathname.startsWith("/video/lp");
       },
-      as: 1,
+      as: 2,
+      gam: 0,
+    },
+    {
+      matchUrl: (url) => {
+        return url.pathname == "/video/" || url.pathname == "/video/index.html";
+      },
+      as: 2,
+      gam: 0,
+    },
+    {
+      matchUrl: (url) => {
+        return url.pathname.startsWith("/video/detail");
+      },
+      as: 2,
       gam: 1,
       actions: [
         {
-          selector: ".down-link-item,.t-play",
+          selector: "#playBtnImg",
           action: "click",
-          delay: 0,
+          delay: 3000,
         },
       ],
     },
     {
-      matchUrl: () => {},
-      pc: {
-        as: 1,
-        gam: 1,
-        actions: [
-          {
-            selector: ".down-link-item,.t-play",
-            action: "click",
-            delay: 0,
-          },
-        ],
+      matchUrl: (url) => {
+        return url.pathname.startsWith("/detail");
       },
-      ipad: {
-        as: 1,
-        gam: 1,
-        actions: [
-          {
-            selector: ".down-link-item,.t-play",
-            action: "click",
-            delay: 0,
-          },
-        ],
+      as: 4,
+      gam: 2,
+      actions: [
+        {
+          selector: ".down-link-item,.t-play",
+          action: "click",
+          delay: 5000,
+        },
+      ],
+    },
+    {
+      matchUrl: (url) => {
+        return true;
       },
-      mobile: {
-        as: 1,
-        gam: 1,
-        actions: [
-          {
-            selector: ".down-link-item,.t-play",
-            action: "click",
-            delay: 0,
-          },
-        ],
-      },
+      as: 1,
+      gam: 1
     },
   ],
 };

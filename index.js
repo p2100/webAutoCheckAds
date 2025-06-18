@@ -983,6 +983,9 @@ async function main() {
     try {
       // 尝试从服务器获取URL列表
       langUrlList = (await (await fetch(`http://new.sp.com/open-api/get_test_urls?site=${cmdArgs.site}`)).json()).result
+      if(!langUrlList || langUrlList.length === 0) {
+        throw new Error('没有找到任何URL配置');
+      }
     } catch (error) {
       console.error('无法连接到服务器获取URL列表:', error.message);
       process.exit(1);
@@ -992,7 +995,7 @@ async function main() {
       const siteConfig = config[lang] || config["us"];
       
       urlList.forEach((url) => {
-        const obj = siteConfig.find((obj) => obj.matchUrl(url));
+        const obj = siteConfig.find((obj) => obj.matchUrl(new URL(url)));
         if (obj) {
           obj.lang = lang;
           urlConfigMap[url] = obj;
