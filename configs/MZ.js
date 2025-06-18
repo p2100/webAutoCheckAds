@@ -2,7 +2,7 @@ export default {
   us: [
     {
       matchUrl: (url) => {
-        return url.includes("https://www.babojoy.com/");
+        return url.includes("mzgen.com");
       },
       as: 1,
       gam: 1,

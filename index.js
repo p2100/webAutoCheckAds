@@ -2,6 +2,31 @@ import puppeteer from "puppeteer";
 // 可选：使用 @puppeteer/browsers 进行浏览器管理
 // import { install, launch, getInstalledBrowsers, Browser } from "@puppeteer/browsers";
 
+// 全局异常处理器
+process.on('uncaughtException', (error) => {
+  console.error('未捕获的异常:', error);
+  console.error('程序因未捕获异常退出');
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('未处理的Promise拒绝:', reason);
+  console.error('程序因未处理的Promise拒绝退出');
+  process.exit(1);
+});
+
+// 处理 Ctrl+C 信号
+process.on('SIGINT', () => {
+  console.log('\n收到 SIGINT 信号，正在退出...');
+  process.exit(0);
+});
+
+// 处理 SIGTERM 信号
+process.on('SIGTERM', () => {
+  console.log('收到 SIGTERM 信号，正在退出...');
+  process.exit(0);
+});
+
 // 检查Node.js版本是否支持fetch
 const nodeVersion = process.version;
 const majorVersion = parseInt(nodeVersion.slice(1).split('.')[0]);
@@ -31,7 +56,8 @@ function parseCommandLineArgs() {
  */
 async function loadConfig(siteName) {
   if (!siteName) {
-    throw new Error('请提供site参数，例如: node index.js site=MZ');
+    console.error('错误: 请提供site参数，例如: node index.js site=MZ');
+    process.exit(1);
   }
   
   try {
@@ -57,7 +83,8 @@ async function loadConfig(siteName) {
       console.error('无法列出配置文件:', listError.message);
     }
     
-    throw error;
+    console.error('程序因配置文件加载失败而退出');
+    process.exit(1);
   }
 }
 
@@ -71,40 +98,45 @@ class WebsiteChecker {
    * 初始化浏览器
    */
   async init() {
-    console.log("正在启动浏览器...");
-    this.browser = await puppeteer.launch({
-      headless: true, // 使用标准无头模式（24.10.0 版本推荐）
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
-        "--no-first-run",
-        "--disable-gpu",
-        "--disable-web-security", // 改善跨域请求处理
-        "--disable-extensions",
-        "--disable-plugins",
-        "--disable-default-apps",
-        "--disable-background-networking",
-        "--disable-background-timer-throttling",
-        "--disable-client-side-phishing-detection",
-        "--disable-default-apps",
-        "--disable-hang-monitor",
-        "--disable-popup-blocking",
-        "--disable-prompt-on-repost",
-        "--disable-sync",
-        "--metrics-recording-only",
-        "--no-first-run",
-        "--safebrowsing-disable-auto-update",
-        "--enable-automation",
-        "--password-store=basic",
-        "--use-mock-keychain",
-      ],
-      // 稳定的超时配置
-      timeout: 30000,
-      ignoreDefaultArgs: ['--disable-extensions'], // 避免参数冲突
-    });
-    console.log("浏览器启动成功");
+    try {
+      console.log("正在启动浏览器...");
+      this.browser = await puppeteer.launch({
+        headless: true, // 使用标准无头模式（24.10.0 版本推荐）
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--disable-gpu",
+          "--disable-web-security", // 改善跨域请求处理
+          "--disable-extensions",
+          "--disable-plugins",
+          "--disable-default-apps",
+          "--disable-background-networking",
+          "--disable-background-timer-throttling",
+          "--disable-client-side-phishing-detection",
+          "--disable-default-apps",
+          "--disable-hang-monitor",
+          "--disable-popup-blocking",
+          "--disable-prompt-on-repost",
+          "--disable-sync",
+          "--metrics-recording-only",
+          "--no-first-run",
+          "--safebrowsing-disable-auto-update",
+          "--enable-automation",
+          "--password-store=basic",
+          "--use-mock-keychain",
+        ],
+        // 稳定的超时配置
+        timeout: 30000,
+        ignoreDefaultArgs: ['--disable-extensions'], // 避免参数冲突
+      });
+      console.log("浏览器启动成功");
+    } catch (error) {
+      console.error("浏览器启动失败:", error.message);
+      process.exit(1);
+    }
   }
 
   /**
@@ -112,8 +144,13 @@ class WebsiteChecker {
    */
   async close() {
     if (this.browser) {
-      await this.browser.close();
-      console.log("浏览器已关闭");
+      try {
+        await this.browser.close();
+        console.log("浏览器已关闭");
+      } catch (error) {
+        console.error("关闭浏览器时出错:", error.message);
+        // 浏览器关闭错误不需要退出程序，只记录日志
+      }
     }
   }
 
@@ -945,16 +982,11 @@ async function main() {
     
     try {
       // 尝试从服务器获取URL列表
-      langUrlList = await (await fetch(`http://new.sp.com/open-api/get_test_urls?site=${cmdArgs.site}`)).json()
+      langUrlList = (await (await fetch(`http://new.sp.com/open-api/get_test_urls?site=${cmdArgs.site}`)).json()).result
     } catch (error) {
-      console.warn('无法连接到服务器，使用测试数据:', error.message);
-      // 使用测试数据
-      langUrlList = {
-        us: ["https://www.babojoy.com/test1", "https://www.babojoy.com/test2"],
-        de: ["https://www.babojoy.com/de/test1"]
-      };
+      console.error('无法连接到服务器获取URL列表:', error.message);
+      process.exit(1);
     }
-    
     Object.keys(langUrlList).forEach((lang) => {
       const urlList = langUrlList[lang];
       const siteConfig = config[lang] || config["us"];
@@ -969,6 +1001,11 @@ async function main() {
         }
       });
     });
+
+    if(Object.keys(urlConfigMap).length === 0) {
+      console.error("错误: 没有找到任何URL配置，程序退出");
+      process.exit(1);
+    }
     
     
     // 执行检测并获取结果
@@ -1001,14 +1038,19 @@ async function main() {
       
       if (response.ok) {
         console.log("结果已成功发送到服务器");
+        console.log("程序执行完成，正常退出");
+        process.exit(0);
       } else {
-        console.error(`发送结果失败: HTTP ${response.status}`);
+        console.error(`发送结果失败: HTTP ${response.status}，程序异常退出`);
+        process.exit(1);
       }
     } catch (error) {
-      console.warn("发送结果到服务器时出错:", error.message);
+      console.error("发送结果到服务器时出错:", error.message);
+      process.exit(1);
     }
   } catch (error) {
     console.error("检测过程中发生错误:", error);
+    process.exit(1);
   } finally {
     await checker.close();
   }
