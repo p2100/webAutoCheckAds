@@ -824,6 +824,29 @@ class WebsiteChecker {
       ipad: {}
     };
 
+    // 创建配置ID映射，用于标识使用相同配置的URL
+    const configIdMap = new Map();
+    let configIdCounter = 1;
+
+    // 为每个配置生成唯一ID
+    const getConfigId = (urlConfig) => {
+      // 创建配置的标识字符串，包含广告配置和actions配置
+      const configSignature = JSON.stringify({
+        as: urlConfig.as,
+        gam: urlConfig.gam,
+        actions: urlConfig.actions,
+        pc: urlConfig.pc,
+        mobile: urlConfig.mobile,
+        ipad: urlConfig.ipad
+      });
+      
+      if (!configIdMap.has(configSignature)) {
+        configIdMap.set(configSignature, configIdCounter++);
+      }
+      
+      return configIdMap.get(configSignature);
+    };
+
     // 创建一个辅助函数来获取URL的状态信息
     const getUrlStatus = (url, device) => {
       const urlResult = checkResults.find(r => r.url === url && r.device === device);
@@ -837,6 +860,9 @@ class WebsiteChecker {
     Object.entries(urlResultsMap).forEach(([url, urlConfig]) => {
       // 获取该URL的统计数据
       const urlStats = hierarchyStats[url];
+      
+      // 获取配置ID
+      const configId = getConfigId(urlConfig);
       
       // 检查配置是否有设备特定配置
       const hasDeviceConfig = urlConfig.pc || urlConfig.mobile || urlConfig.ipad;
@@ -866,7 +892,8 @@ class WebsiteChecker {
                 as: deviceStats?.adTypes?.as?.success || 0,
                 gam: deviceStats?.adTypes?.gam?.success || 0
               },
-              httpStatus: urlStatus.status
+              httpStatus: urlStatus.status,
+              configId: configId
             };
 
             // 检查是否通过
@@ -901,7 +928,8 @@ class WebsiteChecker {
             result[device][url] = {
               skipped: true,
               reason: '该设备未配置',
-              httpStatus: urlStatus.status
+              httpStatus: urlStatus.status,
+              configId: configId
             };
           }
         });
@@ -925,7 +953,8 @@ class WebsiteChecker {
               as: deviceStats?.adTypes?.as?.success || 0,
               gam: deviceStats?.adTypes?.gam?.success || 0
             },
-            httpStatus: urlStatus.status
+            httpStatus: urlStatus.status,
+            configId: configId
           };
 
           // 检查是否通过
